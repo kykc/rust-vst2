@@ -1,0 +1,1 @@
+initSidebarItems({"trait":[["Editor","Implemented by plugin editors."]],"struct":[["KeyCode","A platform independent key code. Includes modifier keys."]]});

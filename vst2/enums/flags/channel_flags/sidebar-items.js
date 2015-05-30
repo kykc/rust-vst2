@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Channel",""]],"constant":[["ACTIVE","/// Indicates channel is active. Ignored by host."],["SPEAKER","/// Use channel's specified speaker_arrangement instead of stereo flag."],["STEREO","/// Indicates channel is first of stereo pair."]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"constant":[["ALT","/// Alt key."],["COMMAND","/// Control on mac."],["CONTROL","/// Command on mac, ctrl on other."],["SHIFT","/// Shift key."]],"struct":[["ModifierKey",""]]});
