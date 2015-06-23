@@ -21,7 +21,6 @@
 //! ```no_run
 //! #[macro_use]
 //! extern crate vst2;
-//! use std::default::Default;
 //!
 //! use vst2::{Vst, Info};
 //!
@@ -71,10 +70,10 @@ use editor::Editor;
 use channels::ChannelInfo;
 
 /// VST plugins are identified by a magic number. This corresponds to 0x56737450.
-const VST_MAGIC: i32 = ('V' as i32) << 24 |
-                       ('s' as i32) << 16 |
-                       ('t' as i32) << 8  |
-                       ('P' as i32) << 0  ;
+pub const VST_MAGIC: i32 = ('V' as i32) << 24 |
+                           ('s' as i32) << 16 |
+                           ('t' as i32) << 8  |
+                           ('P' as i32) << 0  ;
 
 /// Exports the necessary symbols for the plugin to be used by a vst host.
 ///
@@ -82,17 +81,20 @@ const VST_MAGIC: i32 = ('V' as i32) << 24 |
 #[macro_export]
 macro_rules! vst_main {
     ($t:ty) => {
-        #[cfg(target_os = "mac")]
+        #[cfg(target_os = "macos")]
+        #[no_mangle]
         pub extern "system" fn main_macho (callback: $crate::api::HostCallback) -> *mut $crate::api::AEffect {
             VSTPluginMain(callback)
         }
 
         #[cfg(target_os = "windows")]
+        #[allow(non_snake_case)]
+        #[no_mangle]
         pub extern "system" fn MAIN (callback: $crate::api::HostCallback) -> *mut $crate::api::AEffect {
             VSTPluginMain(callback)
         }
 
-        #[allow(non_snake_case, unused_variables)]
+        #[allow(non_snake_case)]
         #[no_mangle]
         pub extern "system" fn VSTPluginMain(callback: $crate::api::HostCallback) -> *mut $crate::api::AEffect {
             $crate::main::<$t>(callback)
@@ -380,6 +382,7 @@ pub trait Vst {
 
 
 #[cfg(test)]
+#[allow(private_no_mangle_fns)] // For `vst_main!`
 mod tests {
     use std::default::Default;
     use std::ptr;
@@ -388,7 +391,6 @@ mod tests {
 
     use Vst;
     use Info;
-    use main;
     use api::AEffect;
 
     #[derive(Default)]
@@ -403,6 +405,8 @@ mod tests {
         }
     }
 
+    vst_main!(TestVst);
+
     fn pass_callback(_effect: *mut AEffect, _opcode: i32, _index: i32, _value: isize, _ptr: *mut c_void, _opt: f32) -> isize {
         1
     }
@@ -411,14 +415,26 @@ mod tests {
         0
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn old_hosts() {
+        assert_eq!(MAIN(fail_callback), ptr::null_mut());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn old_hosts() {
+        assert_eq!(main_macho(fail_callback), ptr::null_mut());
+    }
+
     #[test]
     fn host_callback() {
-        assert_eq!(main::<TestVst>(fail_callback), ptr::null_mut());
+        assert_eq!(VSTPluginMain(fail_callback), ptr::null_mut());
     }
 
     #[test]
     fn aeffect_created() {
-        let aeffect = main::<TestVst>(pass_callback);
+        let aeffect = VSTPluginMain(pass_callback);
         assert!(!aeffect.is_null());
     }
 
@@ -432,7 +448,7 @@ mod tests {
             }
         }
 
-        let aeffect = main::<TestVst>(pass_callback);
+        let aeffect = VSTPluginMain(pass_callback);
         assert!(!aeffect.is_null());
 
         unsafe { (*aeffect).drop_vst() };
@@ -443,7 +459,7 @@ mod tests {
 
     #[test]
     fn vst_no_drop() {
-        let aeffect = main::<TestVst>(pass_callback);
+        let aeffect = VSTPluginMain(pass_callback);
         assert!(!aeffect.is_null());
 
         // Make sure this doesn't crash.
@@ -452,7 +468,7 @@ mod tests {
 
     #[test]
     fn vst_deref() {
-        let aeffect = main::<TestVst>(pass_callback);
+        let aeffect = VSTPluginMain(pass_callback);
         assert!(!aeffect.is_null());
 
         let vst = unsafe { (*aeffect).get_vst() };
