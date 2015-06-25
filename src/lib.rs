@@ -31,6 +31,7 @@
 //!     fn get_info(&self) -> Info {
 //!         Info {
 //!             name: "BasicVst".to_string(),
+//!             unique_id: 1357, // Used by hosts to differentiate between plugins.
 //!
 //!             ..Default::default()
 //!         }
@@ -234,7 +235,7 @@ impl Default for Info {
             inputs: 2, // Stereo in,out
             outputs: 2,
 
-            unique_id: 0,
+            unique_id: 0, // This must be changed.
             version: 0001, // v0.0.0.1
 
             category: PluginCategory::Effect,
@@ -293,6 +294,11 @@ pub trait Vst {
 
     /// Return whether parameter at `index` can be automated.
     fn can_be_automated(&self, index: i32) -> bool { false }
+
+    /// Use String as input for parameter value. Used by host to provide an editable field to
+    /// adjust a parameter value. E.g. "100" may be interpreted as 100hz for parameter. Returns if
+    /// the input string was used.
+    fn string_to_parameter(&self, index: i32, text: String) -> bool { false }
 
 
     /// Called when sample rate is changed by host.
