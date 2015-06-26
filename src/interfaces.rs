@@ -101,6 +101,7 @@ pub fn dispatch(effect: *mut AEffect, opcode: i32, index: i32, value: isize, ptr
         OpCode::GetParameterLabel => copy_string(&vst.get_parameter_label(index), MAX_PARAM_STR_LEN),
         OpCode::GetParameterDisplay => copy_string(&vst.get_parameter_text(index), MAX_PARAM_STR_LEN),
         OpCode::GetParameterName => copy_string(&vst.get_parameter_name(index), MAX_PARAM_STR_LEN),
+        OpCode::GetEffectName => copy_string(&vst.get_info().name, MAX_EFFECT_NAME_STR_LEN),
 
         OpCode::SetSampleRate => vst.sample_rate_changed(opt),
         OpCode::SetBlockSize => vst.block_size_changed(value as i64),
