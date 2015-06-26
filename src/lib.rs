@@ -221,6 +221,9 @@ pub struct Info {
     /// `false`.
     pub f64_precision: bool,
 
+    /// Effect name (chorus, delay, distotion, guitar effect processor, etc)
+    pub effect_name: String,
+
     //no_sound_in_stop: bool, //TODO: Implement this somehow
 }
 
@@ -244,6 +247,8 @@ impl Default for Info {
 
             preset_chunks: false,
             f64_precision: false,
+
+            effect_name: "".to_string(),
         }
     }
 }
