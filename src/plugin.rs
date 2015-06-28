@@ -1,38 +1,20 @@
-//! Enums for use in this library.
+//! Plugin specific structures.
 
-/// Copied from unstable `collections` library.
-#[doc(hidden)]
-pub trait CLike {
-    /// Converts a C-like enum to a `usize`.
-    fn to_usize(&self) -> usize;
-    /// Converts a `usize` to a C-like enum.
-    fn from_usize(usize) -> Self;
-}
+use libc::c_void;
 
-/// Quick implementation of CLike
-macro_rules! impl_clike {
-    ($t:ty) => {
-        impl CLike for $t {
-            fn to_usize(&self) -> usize {
-                *self as usize
-            }
+use channels::ChannelInfo;
+use host::Host;
+use api::Supported;
+use buffer::AudioBuffer;
+use editor::Editor;
 
-            fn from_usize(v: usize) -> $t {
-                use std::mem;
-                unsafe { mem::transmute(v) }
-            }
-        }
-    }
-}
-
-// generally, only effect and synth are necessary.
 /// Plugin type. Generally either Effect or Synth.
 ///
 /// Other types are not necessary to build a plugin and are only useful for the host to categorize
 /// the plugin.
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
-pub enum PluginCategory {
+pub enum Category {
     /// Unknown / not implemented
     Unknown,
     /// Any effect
@@ -58,7 +40,7 @@ pub enum PluginCategory {
     /// Tone generator, etc.
     Generator
 }
-impl_clike!(PluginCategory);
+impl_clike!(Category);
 
 #[repr(usize)]
 #[derive(Clone, Copy, Debug)]
@@ -298,6 +280,89 @@ pub enum OpCode {
 }
 impl_clike!(OpCode);
 
+/// A structure representing static plugin information.
+#[derive(Clone, Debug)]
+pub struct Info {
+    /// Plugin Name.
+    pub name: String,
+
+    /// Plugin Vendor.
+    pub vendor: String,
+
+
+    /// Number of different presets.
+    pub presets: i32,
+
+    /// Number of parameters.
+    pub parameters: i32,
+
+
+    /// Number of inputs.
+    pub inputs: i32,
+
+    /// Number of outputs.
+    pub outputs: i32,
+
+
+    /// Unique plugin ID. Can be registered with Steinberg to prevent conflicts with other plugins.
+    ///
+    /// This ID is used to identify a plugin during save and load of a preset and project.
+    pub unique_id: i32,
+
+    /// Plugin version (e.g. 0001 = `v0.0.0.1`, 1283 = `v1.2.8.3`).
+    pub version: i32,
+
+    /// Plugin category. Possible values are found in `enums::PluginCategory`.
+    pub category: Category,
+
+    /// Latency of the plugin in samples.
+    ///
+    /// This reports how many samples it takes for the plugin to create an output (group delay).
+    pub initial_delay: i32,
+
+    /// Indicates that preset data is handled in formatless chunks.
+    ///
+    /// If false, host saves and restores plugin by reading/writing parameter data. If true, it is
+    /// up to the plugin to manage saving preset data by implementing the
+    /// `{get, load}_{preset, bank}_chunks()` methods. Default is `false`.
+    pub preset_chunks: bool,
+
+    /// Indicates whether this plugin can process f64 based `AudioBuffer` buffers.
+    ///
+    /// Default is `false`.
+    pub f64_precision: bool,
+
+    /// If this is true, the plugin will not produce sound when the input is silence.
+    ///
+    /// Default is `false`.
+    pub silent_when_stopped: bool,
+}
+
+impl Default for Info {
+    fn default() -> Info {
+        Info {
+            name: "VST".to_string(),
+            vendor: String::new(),
+
+            presets: 1, // default preset
+            parameters: 0,
+            inputs: 2, // Stereo in,out
+            outputs: 2,
+
+            unique_id: 0, // This must be changed.
+            version: 0001, // v0.0.0.1
+
+            category: Category::Effect,
+
+            initial_delay: 0,
+
+            preset_chunks: false,
+            f64_precision: false,
+            silent_when_stopped: false,
+        }
+    }
+}
+
 /// Features which are optionally supported by a plugin. These are queried by the host at run time.
 #[derive(Debug)]
 #[allow(missing_docs)]
@@ -344,153 +409,183 @@ impl FromStr for CanDo {
     }
 }
 
-/// Used to specify whether functionality is supported.
-#[allow(dead_code, missing_docs)]
-pub enum Supported {
-    Yes,
-    Maybe,
-    No
-}
+/// Must be implemented by all VST plugins.
+///
+/// All methods except `get_info` provide a default implementation which does nothing and can be
+/// safely overridden.
+#[allow(unused_variables)]
+pub trait Plugin {
+    /// This method must return an `Info` struct.
+    fn get_info(&self) -> Info;
 
-impl Supported {
-    /// Convert to integer ordinal for interop with VST api.
-    pub fn ordinal(self) -> i32 {
-        use self::Supported::*;
-
-        match self {
-            Yes => 1,
-            Maybe => 0,
-            No => -1
-        }
+    /// Called during initialization to pass a Host wrapper to the plugin.
+    ///
+    /// This method can be overriden to set `host` as a field in the plugin struct.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // ...
+    /// # extern crate vst2;
+    /// # #[macro_use] extern crate log;
+    /// # use vst2::plugin::{Plugin, Info};
+    /// use vst2::host::Host;
+    ///
+    /// # #[derive(Default)]
+    /// struct ExamplePlugin {
+    ///     host: Host
+    /// }
+    ///
+    /// impl Plugin for ExamplePlugin {
+    ///     fn new(host: Host) -> ExamplePlugin {
+    ///         ExamplePlugin {
+    ///             host: host
+    ///         }
+    ///     }
+    ///
+    ///     fn init(&mut self) {
+    ///         info!("loaded with host vst version: {}", self.host.vst_version());
+    ///     }
+    ///
+    ///     // ...
+    /// #     fn get_info(&self) -> Info {
+    /// #         Info {
+    /// #             name: "Example Plugin".to_string(),
+    /// #             ..Default::default()
+    /// #         }
+    /// #     }
+    /// }
+    ///
+    /// # fn main() {}
+    /// ```
+    fn new(host: Host) -> Self where Self: Sized + Default {
+        Default::default()
     }
-}
 
-/// For use in editor. Allows host to set how a parameter knob works.
-#[repr(usize)]
-#[derive(Copy, Clone, Debug)]
-#[allow(missing_docs)]
-pub enum KnobMode {
-    Circular,
-    CircularRelative,
-    Linear
-}
-impl_clike!(KnobMode);
+    /// Called when plugin is fully initialized.
+    fn init(&mut self) { trace!("Initialized vst plugin."); }
 
-/// Platform independent key codes.
-#[allow(dead_code, missing_docs)]
-#[repr(usize)]
-#[derive(Debug, Copy, Clone)]
-pub enum Key {
-	Back = 1,
-	Tab,
-	Clear,
-	Return,
-	Pause,
-	Escape,
-	Space,
-	Next,
-	End,
-	Home,
-	Left,
-	Up,
-	Right,
-	Down,
-	PageUp,
-	PageDown,
-	Select,
-	Print,
-	Enter,
-	Snapshot,
-	Insert,
-	Delete,
-	Help,
-	Numpad0,
-	Numpad1,
-	Numpad2,
-	Numpad3,
-	Numpad4,
-	Numpad5,
-	Numpad6,
-	Numpad7,
-	Numpad8,
-	Numpad9,
-	Multiply,
-	Add,
-	Separator,
-	Subtract,
-	Decimal,
-	Divide,
-	F1,
-	F2,
-	F3,
-	F4,
-	F5,
-	F6,
-	F7,
-	F8,
-	F9,
-	F10,
-	F11,
-	F12,
-	Numlock,
-	Scroll,
-	Shift,
-	Control,
-	Alt,
-	Equals
-}
-impl_clike!(Key);
 
-/// Bitflags.
-#[allow(dead_code, missing_docs)]
-pub mod flags {
-    /// Flags for VST channel.
-    pub mod channel_flags {
-        bitflags! {
-            flags Channel: i32 {
-                /// Indicates channel is active. Ignored by host.
-                const ACTIVE = 1,
-                /// Indicates channel is first of stereo pair.
-                const STEREO = 1 << 1,
-                /// Use channel's specified speaker_arrangement instead of stereo flag.
-                const SPEAKER = 1 << 2
+    /// Set the current preset to the index specified by `preset`.
+    fn change_preset(&mut self, preset: i32) { }
+
+    /// Get the current preset index.
+    fn get_preset_num(&self) -> i32 { 0 }
+
+    /// Set the current preset name.
+    fn set_preset_name(&self, name: String) { }
+
+    /// Get the name of the preset at the index specified by `preset`.
+    fn get_preset_name(&self, preset: i32) -> String { "".to_string() }
+
+
+    /// Get parameter label for parameter at `index` (e.g. "db", "sec", "ms", "%").
+    fn get_parameter_label(&self, index: i32) -> String { "".to_string() }
+
+    /// Get the parameter value for parameter at `index` (e.g. "1.0", "150", "Plate", "Off").
+    fn get_parameter_text(&self, index: i32) -> String {
+        format!("{:.3}", self.get_parameter(index))
+    }
+
+    /// Get the name of parameter at `index`.
+    fn get_parameter_name(&self, index: i32) -> String { format!("Param {}", index) }
+
+    /// Get the value of paramater at `index`. Should be value between 0.0 and 1.0.
+    fn get_parameter(&self, index: i32) -> f32 { 0.0 }
+
+    /// Set the value of parameter at `index`. `value` is between 0.0 and 1.0.
+    fn set_parameter(&mut self, index: i32, value: f32) { }
+
+    /// Return whether parameter at `index` can be automated.
+    fn can_be_automated(&self, index: i32) -> bool { false }
+
+    /// Use String as input for parameter value. Used by host to provide an editable field to
+    /// adjust a parameter value. E.g. "100" may be interpreted as 100hz for parameter. Returns if
+    /// the input string was used.
+    fn string_to_parameter(&self, index: i32, text: String) -> bool { false }
+
+
+    /// Called when sample rate is changed by host.
+    fn sample_rate_changed(&mut self, rate: f32) { }
+
+    /// Called when block size is changed by host.
+    fn block_size_changed(&mut self, size: i64) { }
+
+
+    /// Called when plugin is turned on.
+    fn on_resume(&mut self) { }
+
+    /// Called when plugin is turned off.
+    fn on_suspend(&mut self) { }
+
+
+    /// Vendor specific handling.
+    fn vendor_specific(&mut self, index: i32, value: isize, ptr: *mut c_void, opt: f32) { }
+
+
+    /// Return whether plugin supports specified action.
+    fn can_do(&self, can_do: CanDo) -> Supported {
+        info!("Host is asking if plugin can: {:?}.", can_do);
+        Supported::Maybe
+    }
+
+    /// Get the tail size of plugin when it is stopped. Used in offline processing as well.
+    fn get_tail_size(&self) -> isize { 0 }
+
+
+    /// Process an audio buffer containing `f32` values. TODO: Examples
+    fn process(&mut self, buffer: AudioBuffer<f32>) {
+        // For each input and output
+        for (input, output) in buffer.zip() {
+            // For each input sample and output sample in buffer
+            for (in_frame, out_frame) in input.into_iter().zip(output.into_iter()) {
+                *out_frame = *in_frame;
             }
         }
     }
 
-    /// Flags for VST plugins.
-    pub mod plugin {
-        bitflags! {
-            flags Effect: i32 {
-                /// Plugin has an editor.
-                const HAS_EDITOR = 1 << 0,
-                /// Plugin can process 32 bit audio. (Mandatory in VST 2.4).
-                const CAN_REPLACING = 1 << 4,
-                /// Plugin preset data is handled in formatless chunks.
-                const PROGRAM_CHUNKS = 1 << 5,
-                /// Plugin is a synth.
-                const IS_SYNTH = 1 << 8,
-                //TODO: Implement and doc.
-                const NO_SOUND_IN_STOP = 1 << 9,
-                /// Supports 64 bit audio processing.
-                const CAN_DOUBLE_REPLACING = 1 << 12
+    /// Process an audio buffer containing `f64` values. TODO: Examples
+    fn process_f64(&mut self, buffer: AudioBuffer<f64>) {
+        // For each input and output
+        for (input, output) in buffer.zip() {
+            // For each input sample and output sample in buffer
+            for (in_frame, out_frame) in input.into_iter().zip(output.into_iter()) {
+                *out_frame = *in_frame;
             }
         }
     }
 
-    /// Cross platform modifier key bitflags.
-    pub mod modifier_key {
-        bitflags!{
-            flags ModifierKey: u8 {
-                /// Shift key.
-                const SHIFT = 1 << 0, // Shift
-                /// Alt key.
-                const ALT = 1 << 1, // Alt
-                /// Control on mac.
-                const COMMAND = 1 << 2, // Control on Mac
-                /// Command on mac, ctrl on other.
-                const CONTROL = 1 << 3  // Ctrl on PC, Apple on Mac
-            }
-        }
+    /// Return handle to plugin editor if supported.
+    fn get_editor(&mut self) -> Option<&mut Editor> { None }
+
+
+    /// If `preset_chunks` is set to true in plugin info, this should return the raw chunk data for
+    /// the current preset.
+    fn get_preset_data(&mut self) -> Vec<u8> { Vec::new() }
+
+    /// If `preset_chunks` is set to true in plugin info, this should return the raw chunk data for
+    /// the current plugin bank.
+    fn get_bank_data(&mut self) -> Vec<u8> { Vec::new() }
+
+    /// If `preset_chunks` is set to true in plugin info, this should load a preset from the given
+    /// chunk data.
+    fn load_preset_data(&mut self, data: Vec<u8>) {}
+
+    /// If `preset_chunks` is set to true in plugin info, this should load a preset bank from the
+    /// given chunk data.
+    fn load_bank_data(&mut self, data: Vec<u8>) {}
+
+    /// Get information about an input channel. Only used by some hosts.
+    fn get_input_info(&self, input: i32) -> ChannelInfo {
+        ChannelInfo::new(format!("Input channel {}", input),
+                         Some(format!("In {}", input)),
+                         true, None)
+    }
+
+    /// Get information about an output channel. Only used by some hosts.
+    fn get_output_info(&self, output: i32) -> ChannelInfo {
+        ChannelInfo::new(format!("Output channel {}", output),
+                         Some(format!("Out {}", output)),
+                         true, None)
     }
 }
