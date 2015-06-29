@@ -8,23 +8,23 @@ use num::Float;
 
 /// A buffer containing `ChannelBuffer` buffers for each input/output.
 pub struct AudioBuffer<'a, T: 'a + Float> {
-    inputs: Vec<ChannelBuffer<'a, T>>,
-    outputs: Vec<ChannelBuffer<'a, T>>,
+    inputs: Vec<&'a mut [T]>,
+    outputs: Vec<&'a mut [T]>,
 }
 
 /// Iterator over channel buffers for either inputs or outputs.
-pub type ChannelBufferIter<'a, T> = IntoIter<ChannelBuffer<'a, T>>;
+pub type ChannelBufferIter<'a, T> = IntoIter<&'a mut [T]>;
 
 impl<'a, T: 'a + Float> AudioBuffer<'a, T> {
-    /// Create an `AudioBuffer` from vectors of slices. Each vector represents either an input or
-    /// output, and contains an array of samples.
-    /// Eg if inputs was a vector of size 2 containing slices of size 512, it would hold 2 inputs
-    /// where each input holds 512 samples.
+    /// Create an `AudioBuffer` from vectors of slices.
+    ///
+    /// Each vector item represents either an input or output, and contains an array of samples. Eg
+    /// if inputs was a vector of size 2 containing slices of size 512, it would hold 2 inputs where
+    /// each input holds 512 samples.
     pub fn new(inputs: Vec<&'a mut [T]>, outputs: Vec<&'a mut [T]>) -> AudioBuffer<'a, T> {
-        // Creats an input / output for each array in respective Vec
         AudioBuffer {
-            inputs: inputs.into_iter().map(|input| ChannelBuffer::new(input)).collect(),
-            outputs: outputs.into_iter().map(|output| ChannelBuffer::new(output)).collect()
+            inputs: inputs,
+            outputs: outputs,
         }
     }
 
@@ -51,59 +51,37 @@ impl<'a, T: 'a + Float> AudioBuffer<'a, T> {
         AudioBuffer::new(inputs, outputs)
     }
 
-    /// Retreieve input at specified index.
-    pub fn input(&'a mut self, index: usize) -> Option<&'a mut ChannelBuffer<'a, T>> {
-        self.inputs.get_mut(index)
+    /// Return a reference to all inputs.
+    pub fn inputs(&'a mut self) -> &'a mut Vec<&'a mut [T]> {
+        &mut self.inputs
     }
 
-    /// Retreieve output at specified index.
-    pub fn output(&'a mut self, index: usize) -> Option<&'a mut ChannelBuffer<'a, T>> {
-        self.outputs.get_mut(index)
+    /// Return a reference to all outputs.
+    pub fn outputs(&'a mut self) -> &'a mut Vec<&'a mut [T]> {
+        &mut self.outputs
     }
 
-    /// Create an iterator over all inputs.
-    pub fn inputs(self) -> ChannelBufferIter<'a, T> {
-        self.inputs.into_iter()
-    }
-
-    /// Create an iterator over all outputs.
-    pub fn outputs(self) -> ChannelBufferIter<'a, T> {
-        self.outputs.into_iter()
+    /// Consume this buffer and split it into separate inputs and outputs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use vst2::buffer::AudioBuffer;
+    /// # let mut in1 = vec![0.0; 512];
+    /// # let (mut in2, mut out1, mut out2) = (in1.clone(), in1.clone(), in1.clone());
+    /// #
+    /// # let buffer = AudioBuffer::new(vec![&mut in1, &mut in2],
+    /// #                               vec![&mut out1, &mut out2]);
+    /// let (mut inputs, mut outputs) = buffer.split();
+    /// let input: &mut [f32] = &mut inputs[0]; // First input
+    /// ```
+    pub fn split(self) -> (Vec<&'a mut [T]>, Vec<&'a mut [T]>) {
+        (self.inputs, self.outputs)
     }
 
     /// Zip together buffers.
     pub fn zip(self) -> Zip<ChannelBufferIter<'a, T>, ChannelBufferIter<'a, T>> {
         self.inputs.into_iter().zip(self.outputs.into_iter())
-    }
-}
-
-// Maybe Replace this with just a slice?
-/// Buffer samples for one channel.
-pub struct ChannelBuffer<'a, T: 'a + Float>(&'a mut [T]);
-
-impl<'a, T: 'a + Float> ChannelBuffer<'a, T> {
-    /// Construct a new `ChannelBuffer` from a slice.
-    pub fn new(data: &'a mut [T]) -> ChannelBuffer<'a, T> {
-        ChannelBuffer(data)
-    }
-
-    /// Retrieves mutable reference to internal slice
-    pub fn mut_slice(self) -> &'a mut [T] {
-        self.0
-    }
-
-    /// Retrieves immutable reference to internal slice
-    pub fn slice(self) -> &'a [T] {
-        self.0
-    }
-}
-
-impl<'a, T: 'a + Float> IntoIterator for ChannelBuffer<'a, T> {
-    type Item = &'a mut T;
-    type IntoIter = slice::IterMut<'a, T>;
-
-    fn into_iter(self) -> slice::IterMut<'a, T> {
-        self.0.iter_mut()
     }
 }
 
